@@ -45,10 +45,15 @@ def extract_text_from_pdf(file_path: str) -> str:
 # Initialize FastAPI app
 app = FastAPI()
 
+origins = [
+    "http://frontend:3000",  # The frontend container
+    "http://localhost:3000",  # If testing on localhost
+]
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
