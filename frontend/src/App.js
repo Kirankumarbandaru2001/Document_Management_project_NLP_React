@@ -19,12 +19,16 @@ function App() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      alert("Please select a file");
-      return;
-    }
-    const response = await uploadFile(file);
+  if (!file) {
+    alert("Please select a file");
+    return;
+  }
+  const response = await uploadFile(file);
+  if (response.message) {
     alert(response.message);
+  } else {
+    alert("Unexpected response");
+  }
   };
 
   const handleSearch = async () => {
