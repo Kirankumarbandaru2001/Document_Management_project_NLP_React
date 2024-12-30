@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from unstructured.partition.auto import partition
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import mimetypes
-import fitz
+import pdfplumber
 import uuid, os
 from pathlib import Path
 
@@ -34,10 +34,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def extract_text_from_pdf(file_path: str) -> str:
     text = ""
     try:
-        doc = fitz.open(file_path)
-        # doc = PyMuPDFDocument(file_path)  # Open PDF as Document
-        for page in doc:
-            text += page.get_text()  # Extract text from each page
+        with pdfplumber.open(file_path) as pdf:
+            # Iterate through all pages in the PDF
+            for page in pdf.pages:
+                text += page.extract_text()  # Extract text from each page
         return text
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading PDF: {str(e)}")
@@ -56,7 +56,7 @@ app.add_middleware(
 
 # Database setup
 # DATABASE_URL = os.getenv("DATABASE_URL")
-DATABASE_URL = "sqlite:///./test.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
 
@@ -137,10 +137,10 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
         # if file.spool_max_size and file.spool_max_size > 10 * 1024 * 1024:
         #     raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
 
-            # Read the file content and validate its size (10 MB limit)
-            content = await file.read()
-            if len(content) > 10 * 1024 * 1024:  # 10 MB
-                raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
+        # Read the file content and validate its size (10 MB limit)
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:  # 10 MB
+            raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
 
         with file_path.open("wb") as f:
             while chunk := file.file.read(1024 * 1024):  # Read in chunks of 1 MB
@@ -216,13 +216,12 @@ from fastapi.responses import HTMLResponse
 #     with open(os.path.join('frontend', 'frontend.html'), 'r') as f:
 #         return f.read()
 
-# @app.get("/", response_class=HTMLResponse)
-# async def serve_frontend():
-#     try:
-#         with open("../frontend.html", "r") as f:
-#             return f.read()
-#     finally:
-#         return "No Frontend"
+from fastapi.responses import FileResponse
+import os
+
+@app.get("/")
+def serve_root():
+    return FileResponse(os.path.join("frontend", "public", "index.html"))
 
 
 

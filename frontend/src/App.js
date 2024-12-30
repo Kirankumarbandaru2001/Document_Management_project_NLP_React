@@ -1,43 +1,43 @@
 import React, { useState } from "react";
-import "./styles.css";
-import { registerUser, loginUser, uploadDocument, searchDocument } from "./api";
+import { registerUser, loginUser, uploadFile, searchDocuments } from "./api";
 
-const App = () => {
+function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [query, setQuery] = useState("");
   const [file, setFile] = useState(null);
-  const [message, setMessage] = useState("");
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState("");
 
   const handleRegister = async () => {
     const response = await registerUser(username, password);
-    setMessage(response.message || "Error during registration");
+    alert(response.message);
   };
 
   const handleLogin = async () => {
     const response = await loginUser(username, password);
-    setMessage(response.message || "Error during login");
+    alert(response.message);
   };
 
   const handleUpload = async () => {
     if (!file) {
-      setMessage("Please select a file to upload.");
+      alert("Please select a file");
       return;
     }
-    const response = await uploadDocument(file);
-    setMessage(response.message || "Error during upload");
+    const response = await uploadFile(file);
+    alert(response.message);
   };
 
   const handleSearch = async () => {
-    const response = await searchDocument(query);
-    setMessage(response.results || "No results found");
+    const response = await searchDocuments(query);
+    setResult(response.results);
   };
 
   return (
     <div className="app">
-      <h1>Document Management System</h1>
-      <div className="form">
-        <h2>User Actions</h2>
+      <h1>FastAPI React Frontend</h1>
+
+      <div>
+        <h2>Register / Login</h2>
         <input
           type="text"
           placeholder="Username"
@@ -54,33 +54,25 @@ const App = () => {
         <button onClick={handleLogin}>Login</button>
       </div>
 
-      <div className="form">
-        <h2>Document Actions</h2>
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={(e) => setFile(e.target.files[0])}
-        />
+      <div>
+        <h2>Upload File</h2>
+        <input type="file" onChange={(e) => setFile(e.target.files[0])} />
         <button onClick={handleUpload}>Upload</button>
       </div>
 
-      <div className="form">
-        <h2>Search Documents</h2>
+      <div>
+        <h2>Search</h2>
         <input
           type="text"
-          placeholder="Enter your query"
+          placeholder="Enter query"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <button onClick={handleSearch}>Search</button>
-      </div>
-
-      <div className="message">
-        <h3>Response:</h3>
-        <p>{message}</p>
+        <p>Result: {result}</p>
       </div>
     </div>
   );
-};
+}
 
 export default App;
