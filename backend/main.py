@@ -5,10 +5,10 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from unstructured.partition.auto import partition
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import mimetypes
-from fitz import Document as PyMuPDFDocument
-import uuid, jwt, os
+import fitz
+import uuid, os
 from pathlib import Path
-from fastapi.security import OAuth2PasswordBearer
+
 from dotenv import load_dotenv
 from passlib.context import CryptContext
 import datetime
@@ -17,9 +17,7 @@ import datetime
 load_dotenv()
 
 # Retrieve the SECRET_KEY from environment variables
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY environment variable is not set")
+
 
 # Initialize password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -36,7 +34,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def extract_text_from_pdf(file_path: str) -> str:
     text = ""
     try:
-        doc = PyMuPDFDocument(file_path)  # Open PDF as Document
+        doc = fitz.open(file_path)
+        # doc = PyMuPDFDocument(file_path)  # Open PDF as Document
         for page in doc:
             text += page.get_text()  # Extract text from each page
         return text
@@ -109,29 +108,14 @@ def query_with_t5(query: str, document_text: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying with T5: {str(e)}")
 
-# OAuth2 configuration
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# Dependency to verify token
-def get_current_user(token: str = Depends(oauth2_scheme), db: SessionLocal = Depends(get_db)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        user_id = payload.get("user_id")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = db.query(User).filter(User.id == user_id).first()
-        if user is None:
-            raise HTTPException(status_code=401, detail="Invalid user")
-        return user
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+
+
 
 # API Routes
 
 @app.post("/upload/")
-async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depends(get_db)):
     """Upload a document, store locally, and extract metadata."""
     try:
         # Check MIME type for file
@@ -140,7 +124,7 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
             raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are allowed.")
 
         # Ensure upload directory exists
-        upload_dir = Path("backend/uploaded_files")
+        upload_dir = Path("uploaded_files")
         upload_dir.mkdir(parents=True, exist_ok=True)
 
         # Save the uploaded file
@@ -149,9 +133,14 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-        # Validate file size (10 MB limit)
-        if file.spool_max_size and file.spool_max_size > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
+        # # Validate file size (10 MB limit)
+        # if file.spool_max_size and file.spool_max_size > 10 * 1024 * 1024:
+        #     raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
+
+            # Read the file content and validate its size (10 MB limit)
+            content = await file.read()
+            if len(content) > 10 * 1024 * 1024:  # 10 MB
+                raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
 
         with file_path.open("wb") as f:
             while chunk := file.file.read(1024 * 1024):  # Read in chunks of 1 MB
@@ -165,7 +154,7 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
             filename=file.filename,
             file_path=str(file_path),
             doc_metadata=doc_metadata,
-            user_id=current_user.id
+
         )
         db.add(document)
         db.commit()
@@ -177,20 +166,21 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/search/")
-async def search_documents(query: str, db: SessionLocal = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def search_documents(query: str, db: SessionLocal = Depends(get_db)):
     """Search documents using T5 for question answering."""
     try:
-        documents = db.query(Document).all()
+        documents = db.query(Document).order_by(Document.id.desc()).first()
         if not documents:
             raise HTTPException(status_code=404, detail="No documents found")
 
-        results = []
-        for doc in documents:
-            if doc.user_id == current_user.id:
-                answer = query_with_t5(query, doc.doc_metadata)
-                results.append({"document_id": doc.id, "filename": doc.filename, "answer": answer})
 
-        return {"results": results}
+        answer = query_with_t5(query, documents.doc_metadata)
+        return {
+            "document_id": documents.id,
+            "filename": documents.filename,
+            "results": answer
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -214,13 +204,9 @@ async def login_user(username: str, password: str, db: SessionLocal = Depends(ge
     if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Create JWT token on successful login
-    token = jwt.encode(
-        {"user_id": user.id, "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)},
-        SECRET_KEY, algorithm="HS256"
-    )
 
-    return {"message": "Login successful", "access_token": token}
+
+    return {"message": "Login successful"}
 
 from fastapi.responses import HTMLResponse
 
@@ -230,10 +216,14 @@ from fastapi.responses import HTMLResponse
 #     with open(os.path.join('frontend', 'frontend.html'), 'r') as f:
 #         return f.read()
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_frontend():
-    with open("../frontend.html", "r") as f:
-        return f.read()
+# @app.get("/", response_class=HTMLResponse)
+# async def serve_frontend():
+#     try:
+#         with open("../frontend.html", "r") as f:
+#             return f.read()
+#     finally:
+#         return "No Frontend"
+
 
 
 if __name__ == "__main__":
