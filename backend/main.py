@@ -138,14 +138,14 @@ async def upload_document(file: UploadFile = File(...), db: SessionLocal = Depen
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-        # # Validate file size (10 MB limit)
-        # if file.spool_max_size and file.spool_max_size > 10 * 1024 * 1024:
-        #     raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
-
-        # Read the file content and validate its size (10 MB limit)
-        content = await file.read()
-        if len(content) > 10 * 1024 * 1024:  # 10 MB
+        # Validate file size (10 MB limit)
+        if file.spool_max_size and file.spool_max_size > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
+
+        # # Read the file content and validate its size (10 MB limit)
+        # content = await file.read()
+        # if len(content) > 10 * 1024 * 1024:  # 10 MB
+        #     raise HTTPException(status_code=400, detail="File size exceeds 10 MB limit")
 
         with file_path.open("wb") as f:
             while chunk := file.file.read(1024 * 1024):  # Read in chunks of 1 MB
